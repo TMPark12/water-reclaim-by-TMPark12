@@ -17,76 +17,92 @@ interface FloatText {
   color: string
 }
 
+type Difficulty = 'easy' | 'hard'
+
 const COLS = 5
 const ROWS = 8
 const EXIT_COL = Math.floor(COLS / 2)
 
-function generateGrid(level: number, usedMazes?: Set<string>): Cell[][] {
-  const turnRowPatterns = [
-    [1, 3, 5],
-    [1, 3, 6],
-    [1, 4, 6],
-    [2, 4, 6],
-  ]
+function getRouteSegments(level: number, difficulty: Difficulty): number {
+  const maxSegments = ROWS - 2
+  return difficulty === 'easy'
+    ? Math.min(level - 1, maxSegments)
+    : Math.min(3 + Math.floor((level - 1) / 3), maxSegments)
+}
+
+function generateGrid(level: number, difficulty: Difficulty, usedMazes?: Set<string>): Cell[][] {
+  const segmentCount = getRouteSegments(level, difficulty)
   const candidates: { cells: Set<string>; signature: string }[] = []
+  const rowPatterns: number[][] = []
+  const chooseRows = (start: number, selected: number[]) => {
+    if (selected.length === segmentCount) {
+      rowPatterns.push(selected)
+      return
+    }
+    for (let row = start; row <= ROWS - 2; row++) {
+      chooseRows(row + 1, [...selected, row])
+    }
+  }
+  chooseRows(1, [])
 
+  const columnRoutes: number[][] = []
   for (let startCol = 0; startCol < COLS; startCol++) {
-    for (let firstTurn = 0; firstTurn < COLS; firstTurn++) {
-      if (firstTurn === startCol) continue
+    if (segmentCount === 0) {
+      if (startCol === EXIT_COL) columnRoutes.push([startCol])
+      continue
+    }
 
-      for (let secondTurn = 0; secondTurn < COLS; secondTurn++) {
-        if (
-          secondTurn === firstTurn ||
-          secondTurn === EXIT_COL ||
-          Math.sign(secondTurn - firstTurn) === Math.sign(firstTurn - startCol)
-        ) continue
-
-        for (const turnRows of turnRowPatterns) {
-          const cells = new Set<string>()
-          const columns = [startCol, firstTurn, secondTurn, EXIT_COL]
-          let currentRow = 0
-          let currentCol = startCol
-          cells.add(`${currentRow}-${currentCol}`)
-
-          turnRows.forEach((turnRow, index) => {
-            while (currentRow < turnRow) {
-              currentRow++
-              cells.add(`${currentRow}-${currentCol}`)
-            }
-
-            const nextCol = columns[index + 1]
-            const direction = Math.sign(nextCol - currentCol)
-            while (currentCol !== nextCol) {
-              currentCol += direction
-              cells.add(`${currentRow}-${currentCol}`)
-            }
-          })
-
-          while (currentRow < ROWS - 1) {
-            currentRow++
-            cells.add(`${currentRow}-${currentCol}`)
-          }
-
-          candidates.push({
-            cells,
-            signature: [...cells].sort().join('|'),
-          })
-        }
+    const extendRoute = (route: number[]) => {
+      const completedSegments = route.length - 1
+      if (completedSegments === segmentCount) {
+        if (route.at(-1) === EXIT_COL) columnRoutes.push(route)
+        return
       }
+
+      const isFinalSegment = completedSegments === segmentCount - 1
+      const nextColumns = isFinalSegment
+        ? [EXIT_COL]
+        : Array.from({ length: COLS }, (_, col) => col).filter(col => col !== route.at(-1))
+
+      for (const nextCol of nextColumns) {
+        if (nextCol !== route.at(-1)) extendRoute([...route, nextCol])
+      }
+    }
+    extendRoute([startCol])
+  }
+
+  for (const turnRows of rowPatterns) {
+    for (const columns of columnRoutes) {
+      const cells = new Set<string>()
+      let currentRow = 0
+      let currentCol = columns[0]
+      cells.add(`${currentRow}-${currentCol}`)
+
+      turnRows.forEach((turnRow, index) => {
+        while (currentRow < turnRow) {
+          currentRow++
+          cells.add(`${currentRow}-${currentCol}`)
+        }
+
+        const nextCol = columns[index + 1]
+        const direction = Math.sign(nextCol - currentCol)
+        while (currentCol !== nextCol) {
+          currentCol += direction
+          cells.add(`${currentRow}-${currentCol}`)
+        }
+      })
+
+      while (currentRow < ROWS - 1) {
+        currentRow++
+        cells.add(`${currentRow}-${currentCol}`)
+      }
+
+      candidates.push({ cells, signature: [...cells].sort().join('|') })
     }
   }
 
-  // Each level adds one route cell until the fair maximum is reached.
-  // The route always remains a single, fully connected zigzag.
-  const targetRouteLength = Math.min(10 + level, 18)
-  const levelCandidates = candidates.filter(
-    candidate => candidate.cells.size === targetRouteLength,
-  )
-  const unusedCandidates = levelCandidates.filter(
-    candidate => !usedMazes?.has(candidate.signature),
-  )
-  const availableCandidates =
-    unusedCandidates.length > 0 ? unusedCandidates : levelCandidates
+  const unusedCandidates = candidates.filter(candidate => !usedMazes?.has(candidate.signature))
+  const availableCandidates = unusedCandidates.length > 0 ? unusedCandidates : candidates
   const selected =
     availableCandidates[Math.floor(Math.random() * availableCandidates.length)]
   const cleanCells = selected.cells
@@ -517,9 +533,176 @@ function MinerCharacter({ celebrate, compact = false }: { celebrate: boolean; co
   )
 }
 
+const RULE_CARDS = [
+  {
+    title: 'Dig carefully',
+    detail: 'Open only cells in the miner’s current row or the row directly below.',
+    label: 'ONE ROW AT A TIME',
+  },
+  {
+    title: 'Follow the green',
+    detail: 'Green marks clean water. Find every green block in the miner’s row before moving to the next row. Each clean block earns 10 points.',
+    label: 'CLEAN WATER · +10',
+  },
+  {
+    title: 'Watch for toxic blocks',
+    detail: 'Toxic blocks turn red and deduct 5 points. Each one reveals a water fact to remember for the Level 10 quiz.',
+    label: 'TOXIC WATER · −5',
+  },
+  {
+    title: 'Put your knowledge to work',
+    detail: 'Reach the exit for a 50-point route bonus. At the end of Level 10, answer the trivia question and wager points based on what you learned.',
+    label: 'LEVEL 10 · TRIVIA WAGER',
+  },
+]
+
+function RulesDemoOverlay({
+  difficulty,
+  onDifficultyChange,
+  onClose,
+  isIntro,
+}: {
+  difficulty: Difficulty
+  onDifficultyChange: (difficulty: Difficulty) => void
+  onClose: () => void
+  isIntro: boolean
+}) {
+  const [step, setStep] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [demoStarted, setDemoStarted] = useState(false)
+
+  useEffect(() => {
+    if (!playing) return
+    const timer = window.setInterval(() => {
+      setStep(current => Math.min(RULE_CARDS.length - 1, current + 1))
+    }, 3200)
+    return () => window.clearInterval(timer)
+  }, [playing])
+
+  useEffect(() => {
+    if (playing && step === RULE_CARDS.length - 1) setPlaying(false)
+  }, [playing, step])
+
+  const selectedRule = RULE_CARDS[step]
+
+  return (
+    <div
+      className="absolute inset-0 z-[70] flex items-center justify-center px-4 py-5"
+      style={{ background: 'rgba(4,18,32,0.97)', backdropFilter: 'blur(6px)' }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rules-demo-title"
+    >
+      <div
+        className="tutorial-panel w-full max-w-[340px] overflow-y-auto rounded-3xl px-5 py-5"
+        style={{
+          maxHeight: '100%',
+          background: 'linear-gradient(145deg, #071f3c, #0b3151)',
+          border: '1.5px solid rgba(0,255,204,0.5)',
+          boxShadow: '0 24px 70px rgba(0,0,0,0.65), 0 0 35px rgba(0,201,255,0.14)',
+        }}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="font-black" style={{ color: '#00ffcc', fontSize: 10, letterSpacing: '0.14em' }}>
+              FIELD GUIDE · {String(step + 1).padStart(2, '0')} / {RULE_CARDS.length}
+            </div>
+            <h2 id="rules-demo-title" className="mb-0 mt-1 font-black" style={{ color: '#e8f4fd', fontSize: 23, lineHeight: 1.05 }}>
+              How to reclaim water
+            </h2>
+          </div>
+          <div className="flex flex-col items-end gap-1" aria-label="Choose difficulty">
+            {(['easy', 'hard'] as const).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                className={`difficulty-choice ${difficulty === mode ? 'is-selected' : ''}`}
+                onClick={() => onDifficultyChange(mode)}
+                aria-pressed={difficulty === mode}
+              >
+                {mode === 'easy' ? 'EASY' : 'HARD'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={`demo-board demo-step-${step + 1}`} aria-label={`Animated game preview: ${selectedRule.title}`}>
+          {Array.from({ length: 15 }, (_, index) => {
+            const row = Math.floor(index / COLS)
+            const isClean = step >= 1 && [1, 2, 7, 12].includes(index)
+            const isToxic = step >= 2 && [4, 8].includes(index)
+            const isExit = index === 12
+            const isMiner = (step === 0 && index === 2) || (step === 1 && index === 7)
+            const isReachable = step === 0 ? row === 0 : row <= Math.min(step, 2)
+
+            return (
+              <div
+                key={index}
+                className={`demo-tile ${isClean ? 'is-clean' : ''} ${isToxic ? 'is-toxic' : ''} ${isReachable ? 'is-reachable' : ''} ${isExit ? 'is-exit' : ''}`}
+              >
+                {isMiner ? <span aria-label="miner">⛏</span> : isExit ? 'EXIT' : isClean ? '●' : isToxic ? '!' : '?' }
+              </div>
+            )
+          })}
+          {step >= 1 && <span className="demo-score demo-clean-score">+10</span>}
+          {step >= 2 && <span className="demo-score demo-toxic-score">−5</span>}
+        </div>
+
+        <div className="mt-3 flex items-center justify-between">
+          <span className="font-black" style={{ color: '#00ffcc', fontSize: 9, letterSpacing: '0.12em' }}>{selectedRule.label}</span>
+          <span className="font-bold" style={{ color: 'rgba(168,216,240,0.55)', fontSize: 9 }}>AUTOPLAY DEMO</span>
+        </div>
+        <section className="rule-card mt-2 rounded-2xl px-4 py-3" aria-live="polite">
+          <h3 className="m-0 font-black" style={{ color: '#e8f4fd', fontSize: 17 }}>{selectedRule.title}</h3>
+          <p className="mb-0 mt-1 font-bold" style={{ color: 'rgba(220,247,255,0.74)', fontSize: 11, lineHeight: 1.5 }}>{selectedRule.detail}</p>
+        </section>
+
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <button type="button" className="demo-control" onClick={() => { setPlaying(false); setStep(current => Math.max(0, current - 1)) }} aria-label="Previous rule card">
+            ‹
+          </button>
+          <div className="flex flex-1 items-center justify-center gap-2" aria-label="Demo progress">
+            {RULE_CARDS.map((card, index) => (
+              <button
+                key={card.title}
+                type="button"
+                className={`demo-progress ${step === index ? 'is-current' : ''}`}
+                onClick={() => { setPlaying(false); setStep(index) }}
+                aria-label={`Show rule ${index + 1}: ${card.title}`}
+                aria-current={step === index ? 'step' : undefined}
+              />
+            ))}
+          </div>
+          <button type="button" className="demo-control" onClick={() => { setPlaying(false); setStep(current => Math.min(RULE_CARDS.length - 1, current + 1)) }} aria-label="Next rule card">
+            ›
+          </button>
+        </div>
+
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            className={`demo-play-button ${demoStarted ? 'has-started' : ''}`}
+            onClick={() => {
+              if (!playing && step === RULE_CARDS.length - 1) setStep(0)
+              setDemoStarted(true)
+              setPlaying(current => !current)
+            }}
+          >
+            {playing ? 'PAUSE DEMO' : 'PLAY DEMO'}
+          </button>
+          <button type="button" className="tutorial-start-button" onClick={onClose}>
+            {isIntro ? 'START MISSION' : 'RETURN TO GAME'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const usedMazes = useRef(new Set<string>())
-  const [grid, setGrid] = useState<Cell[][]>(() => generateGrid(1, usedMazes.current))
+  const [difficulty, setDifficulty] = useState<Difficulty>('easy')
+  const [grid, setGrid] = useState<Cell[][]>(() => generateGrid(1, 'easy', usedMazes.current))
   const [score, setScore] = useState(0)
   const [level, setLevel] = useState(1)
   const [floatTexts, setFloatTexts] = useState<FloatText[]>([])
@@ -612,7 +795,11 @@ export default function App() {
     const playerRow = lastCleanCell
       ? Number(lastCleanCell.split('-')[0])
       : -1
-    if (row > playerRow + 1) return
+    const rowHasUnfoundClean = playerRow >= 0 && grid[playerRow].some(
+      cell => cell.onPath && cell.type !== 'empty',
+    )
+    const playableRow = playerRow < 0 ? 0 : rowHasUnfoundClean ? playerRow : playerRow + 1
+    if (row !== playableRow) return
 
     const cell = grid[row][col]
     if (cell.type === 'empty' || cell.cracking) return
@@ -652,7 +839,7 @@ export default function App() {
   const nextLevel = () => {
     if (celebrationTimer.current) clearTimeout(celebrationTimer.current)
     setLevel(l => l + 1)
-    setGrid(generateGrid(level + 1, usedMazes.current))
+    setGrid(generateGrid(level + 1, difficulty, usedMazes.current))
     setPathCells(new Set())
     setPipeActive(false)
     setCelebrate(false)
@@ -663,7 +850,7 @@ export default function App() {
 
   const reset = () => {
     if (celebrationTimer.current) clearTimeout(celebrationTimer.current)
-    setGrid(generateGrid(level, usedMazes.current))
+    setGrid(generateGrid(level, difficulty, usedMazes.current))
     setScore(0)
     setPathCells(new Set())
     setPipeActive(false)
@@ -671,6 +858,28 @@ export default function App() {
     setShowCelebration(false)
     setShowToxicWarning(false)
     setLastCleanCell(null)
+  }
+
+  const startNewGame = (nextDifficulty: Difficulty) => {
+    if (celebrationTimer.current) clearTimeout(celebrationTimer.current)
+    usedMazes.current.clear()
+    learnedFactIds.current.clear()
+    factUseCounts.current.clear()
+    setDifficulty(nextDifficulty)
+    setLevel(1)
+    setGrid(generateGrid(1, nextDifficulty, usedMazes.current))
+    setScore(0)
+    setPathCells(new Set())
+    setPipeActive(false)
+    setCelebrate(false)
+    setShowCelebration(false)
+    setShowToxicWarning(false)
+    setLastCleanCell(null)
+    setQuizFact(null)
+    setQuizOptions([])
+    setWagerPercent(null)
+    setSelectedQuizFactId(null)
+    setQuizScoreChange(null)
   }
 
   const answerTrivia = (answer: KnowledgeFact) => {
@@ -696,6 +905,12 @@ export default function App() {
 
   const emptyCells = grid.flat().filter(c => c.type === 'empty').length
   const totalCells = ROWS * COLS
+  const playerRow = lastCleanCell ? Number(lastCleanCell.split('-')[0]) : -1
+  const rowHasUnfoundClean = playerRow >= 0 && grid[playerRow].some(
+    cell => cell.onPath && cell.type !== 'empty',
+  )
+  const playableRow = playerRow < 0 ? 0 : rowHasUnfoundClean ? playerRow : playerRow + 1
+  const routeTurns = getRouteSegments(level, difficulty) * 2
 
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: '#041220' }}>
@@ -717,7 +932,7 @@ export default function App() {
         {/* HUD */}
         <div className="px-5 pb-2">
           <div className="flex items-center justify-between">
-            <div>
+            <div className="min-w-0">
               <h1 className="font-black leading-none"
                 style={{ fontSize: 20, color: '#00c9ff', textShadow: '0 0 16px rgba(0,201,255,0.5)', letterSpacing: '-0.02em' }}
               >
@@ -734,6 +949,9 @@ export default function App() {
                 </span>
               </div>
             </div>
+            <div className="claim-water-wordmark" role="img" aria-label="Claim:Water">
+              <span>claim</span><span className="claim-water-colon">:</span><span>water</span>
+            </div>
             <div className="px-4 py-2 rounded-2xl font-black"
               style={{
                 background: 'rgba(0,201,255,0.1)', border: '1.5px solid rgba(0,201,255,0.25)',
@@ -743,6 +961,14 @@ export default function App() {
             >
               {score}
             </div>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="difficulty-status">
+              {difficulty.toUpperCase()} · {routeTurns} {routeTurns === 1 ? 'TURN' : 'TURNS'}
+            </span>
+            <button type="button" className="tutorial-open-button" onClick={() => setShowRules(true)}>
+              HOW TO PLAY
+            </button>
           </div>
         </div>
 
@@ -796,7 +1022,11 @@ export default function App() {
             className="m-0 pb-2 text-center font-bold"
             style={{ fontSize: 9, color: 'rgba(168,216,240,0.5)', letterSpacing: '0.06em' }}
           >
-            ONE HIDDEN ROUTE — ONE EXIT
+            {playerRow < 0
+              ? 'DIG THE TOP ROW TO FIND GREEN'
+              : rowHasUnfoundClean
+                ? `CLEAR EVERY GREEN BLOCK IN ROW ${playerRow + 1}`
+                : 'ROW CLEAR · MOVE DIRECTLY BELOW'}
           </p>
           {/* Float texts */}
           {floatTexts.map(ft => (
@@ -820,10 +1050,7 @@ export default function App() {
               row.map((cell, c) => {
                 const isPath = pathCells.has(`${r}-${c}`)
                 const isEmpty = cell.type === 'empty'
-                const playerRow = lastCleanCell
-                  ? Number(lastCleanCell.split('-')[0])
-                  : -1
-                const isLocked = r > playerRow + 1
+                const isLocked = r !== playableRow
                 const isClearedClean = isEmpty && cell.onPath
                 const isClearedToxic = isEmpty && !cell.onPath
                 const isStart = r === 0 && cell.onPath && !isEmpty
@@ -914,7 +1141,7 @@ export default function App() {
                             {isLocked ? '×' : '?'}
                           </span>
                           <span className="font-bold" style={{ fontSize: 7, letterSpacing: '0.08em', color: 'rgba(168,216,240,0.55)', position: 'relative', zIndex: 1 }}>
-                            {isLocked ? 'TOO DEEP' : 'UNKNOWN'}
+                            {isLocked ? (r < playableRow ? 'ROW DONE' : 'NEXT ROW') : 'UNKNOWN'}
                           </span>
                         </>
                       )
@@ -1089,79 +1316,12 @@ export default function App() {
           />
         )}
         {showRules && (
-          <div
-            className="absolute inset-0 z-[70] flex items-center justify-center px-5"
-            style={{ background: 'rgba(4,18,32,0.96)', backdropFilter: 'blur(5px)' }}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div
-              className="pop-in w-full max-w-[315px] rounded-3xl px-6 py-6"
-              style={{
-                background: 'linear-gradient(145deg, #071f3c, #0b3151)',
-                border: '1.5px solid rgba(0,255,204,0.5)',
-                boxShadow: '0 24px 70px rgba(0,0,0,0.65), 0 0 35px rgba(0,201,255,0.14)',
-              }}
-            >
-              <div className="text-center">
-                <div className="font-black" style={{ color: '#00ffcc', fontSize: 10, letterSpacing: '0.15em' }}>
-                  MISSION BRIEFING
-                </div>
-                <div className="mt-1 font-black" style={{ color: '#e8f4fd', fontSize: 25 }}>
-                  HOW TO RECLAIM WATER
-                </div>
-                <p className="mb-0 mt-2 font-bold" style={{ color: 'rgba(168,216,240,0.72)', fontSize: 11, lineHeight: 1.45 }}>
-                  Find the one hidden clean route from START to the groundwater EXIT.
-                </p>
-              </div>
-
-              <div className="mt-5 flex flex-col gap-3">
-                {[
-                  ['1', 'DIG CAREFULLY', 'Only the row beside or directly below the miner can be opened.'],
-                  ['2', 'FOLLOW GREEN', 'Clean blocks turn green, move the miner, and add 10 points.'],
-                  ['3', 'LEARN FROM TOXIC WATER', 'Toxic blocks turn red, cost 5 points, and reveal a global water fact. Confirm each fact before digging again.'],
-                  ['4', 'CONNECT AND LEARN', 'Reach the EXIT, read the clean-water fact, and confirm before advancing. Every 10 levels unlocks a trivia wager.'],
-                ].map(([number, title, detail]) => (
-                  <div key={number} className="flex gap-3">
-                    <div
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-black"
-                      style={{
-                        background: 'rgba(0,255,204,0.13)',
-                        border: '1px solid rgba(0,255,204,0.4)',
-                        color: '#00ffcc',
-                        fontSize: 11,
-                      }}
-                    >
-                      {number}
-                    </div>
-                    <div>
-                      <div className="font-black" style={{ color: '#e8f4fd', fontSize: 10, letterSpacing: '0.06em' }}>
-                        {title}
-                      </div>
-                      <div className="mt-0.5 font-bold" style={{ color: 'rgba(168,216,240,0.65)', fontSize: 10, lineHeight: 1.4 }}>
-                        {detail}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                onClick={() => setShowRules(false)}
-                className="mt-6 w-full rounded-2xl py-3 font-black transition-all active:scale-95"
-                style={{
-                  background: 'linear-gradient(135deg, #00c9ff, #00ffcc)',
-                  color: '#041220',
-                  border: 'none',
-                  fontSize: 13,
-                  letterSpacing: '0.06em',
-                  cursor: 'pointer',
-                }}
-              >
-                START RECLAIMING
-              </button>
-            </div>
-          </div>
+          <RulesDemoOverlay
+            difficulty={difficulty}
+            onDifficultyChange={startNewGame}
+            onClose={() => setShowRules(false)}
+            isIntro={level === 1 && emptyCells === 0}
+          />
         )}
       </div>
     </div>
