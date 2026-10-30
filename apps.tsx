@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useAutomaticTranslation } from './automatic-translation'
 
 type BlockType = 'clean' | 'pollutant' | 'empty'
 
@@ -163,6 +164,51 @@ function findPath(grid: Cell[][]): [number, number][] | null {
   return null
 }
 
+function useDialogFocus<T extends HTMLElement>(active = true) {
+  const dialogRef = useRef<T>(null)
+
+  useEffect(() => {
+    if (!active || !dialogRef.current) return
+
+    const dialog = dialogRef.current
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    const getFocusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
+    const firstFocusable = getFocusable()[0]
+    ;(firstFocusable ?? dialog).focus()
+
+    const keepFocusInside = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return
+      const focusable = getFocusable()
+      if (focusable.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    dialog.addEventListener('keydown', keepFocusInside)
+    return () => {
+      dialog.removeEventListener('keydown', keepFocusInside)
+      previousFocus?.focus()
+    }
+  }, [active])
+
+  return dialogRef
+}
+
 const CONFETTI_COLORS = ['#00ffcc', '#00c9ff', '#ffd700', '#ff6b9d', '#a78bfa', '#34d399', '#fb923c']
 
 interface KnowledgeFact {
@@ -171,16 +217,13 @@ interface KnowledgeFact {
 }
 
 const CLEAN_WATER_FACTS = [
-  { id: 'clean-access', fact: 'WHO and UNICEF reported that 2.2 billion people still lacked safely managed drinking water in 2022—every safe connection can transform a community.' },
-  { id: 'clean-health', fact: 'WHO estimates that better water, sanitation, and hygiene could have prevented at least 1.4 million deaths worldwide in 2019.' },
-  { id: 'clean-time', fact: 'UNICEF reports that women and girls spend about 200 million hours collecting water every day. Nearby safe water returns time for school, work, and family.' },
-  { id: 'clean-right', fact: 'The United Nations recognizes safe drinking water and sanitation as human rights essential to health, dignity, and opportunity.' },
-  { id: 'clean-climate', fact: 'Protecting groundwater strengthens climate resilience by preserving reliable local water supplies through droughts and extreme weather.' },
-  { id: 'clean-groundwater', fact: 'UNESCO reports that groundwater supplies nearly half of all domestic water used worldwide, making aquifer protection globally important.' },
-  { id: 'clean-school', fact: 'Safe water and sanitation at school help students stay healthy, attend class, and manage hygiene with dignity.' },
-  { id: 'clean-food', fact: 'Reliable clean water supports food security by helping farmers grow crops safely and communities prepare food without spreading disease.' },
-  { id: 'clean-wetlands', fact: 'Healthy wetlands naturally store water, reduce floods, and filter some pollutants before water reaches rivers and aquifers.' },
-  { id: 'clean-economy', fact: 'Accessible safe water saves time and medical costs, allowing families and communities to invest more in education and livelihoods.' },
+  { id: 'cw-donation-model', fact: 'charity: water says 100% of public donations fund clean-water projects; private donors cover its operating costs.' },
+  { id: 'cw-project-proof', fact: 'charity: water provides GPS coordinates and photos to show the results of the water projects it funds.' },
+  { id: 'cw-project-count', fact: 'charity: water reports more than 209,000 funded water projects. Its live count includes completed projects and projects under construction.' },
+  { id: 'cw-people-served', fact: 'charity: water reports that its projects have served more than 21.6 million people.' },
+  { id: 'cw-countries', fact: 'charity: water reports working across 29 countries to bring communities clean and safe water.' },
+  { id: 'cw-impact-updates', fact: 'charity: water updates its project and people-served totals as partners share new information from the field.' },
+  { id: 'cw-mission', fact: 'charity: water’s mission is to bring clean and safe water to communities in need.' },
 ] satisfies KnowledgeFact[]
 
 const TOXIC_WATER_FACTS = [
@@ -209,6 +252,7 @@ function CelebrationOverlay({
   nextLevel: number
   onContinue: () => void
 }) {
+  const dialogRef = useDialogFocus<HTMLDivElement>()
   const pieces = Array.from({ length: 28 }, (_, i) => ({
     id: i,
     color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
@@ -233,8 +277,13 @@ function CelebrationOverlay({
 
   return (
     <div
+      ref={dialogRef}
       className="absolute inset-0 z-50 flex flex-col items-center justify-center"
       style={{ borderRadius: 40, background: 'rgba(4,18,32,0.85)', backdropFilter: 'blur(3px)' }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="celebration-dialog-title"
+      tabIndex={-1}
     >
       <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ borderRadius: 40 }}>
         {pieces.map(p => (
@@ -286,7 +335,7 @@ function CelebrationOverlay({
             >{e}</span>
           ))}
         </div>
-        <div className="font-black text-center leading-tight"
+        <div id="celebration-dialog-title" className="font-black text-center leading-tight"
           style={{ fontSize: 26, color: '#00ffcc', textShadow: '0 0 24px rgba(0,255,204,0.7)', letterSpacing: '-0.02em' }}
         >
           PIPE CONNECTED!
@@ -315,6 +364,20 @@ function CelebrationOverlay({
           >
             {benefit}
           </p>
+          <a
+            className="fact-source"
+            href="https://www.charitywater.org/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <img
+              className="charity-water-icon"
+              src="https://www.charitywater.org/vite/assets/apple-pin-favicon-F4mtjPZy.svg"
+              alt=""
+              aria-hidden="true"
+            />
+            Source: charity: water
+          </a>
         </div>
         <div className="w-full">
           <div className="flex justify-between mb-1">
@@ -371,6 +434,7 @@ function TriviaOverlay({
   onAnswer: (fact: KnowledgeFact) => void
   onContinue: () => void
 }) {
+  const dialogRef = useDialogFocus<HTMLDivElement>()
   const answered = selectedFactId !== null
   const wagerPoints = answered
     ? Math.abs(scoreChange ?? 0)
@@ -381,8 +445,13 @@ function TriviaOverlay({
 
   return (
     <div
+      ref={dialogRef}
       className="absolute inset-0 z-[60] flex items-center justify-center px-5"
       style={{ background: 'rgba(4,18,32,0.96)', backdropFilter: 'blur(5px)' }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="trivia-dialog-title"
+      tabIndex={-1}
     >
       <div
         className="w-full rounded-3xl px-5 py-6"
@@ -396,9 +465,9 @@ function TriviaOverlay({
           <div className="font-black" style={{ color: '#00ffcc', fontSize: 10, letterSpacing: '0.15em' }}>
             KNOWLEDGE CHECK · LEVELS {startLevel}–{level}
           </div>
-          <div className="mt-1 font-black" style={{ color: '#e8f4fd', fontSize: 24 }}>
+          <h2 id="trivia-dialog-title" className="mb-0 mt-1 font-black" style={{ color: '#e8f4fd', fontSize: 24 }}>
             WATER TRIVIA WAGER
-          </div>
+          </h2>
           <p className="mx-auto mb-0 mt-2 font-bold" style={{ color: 'rgba(168,216,240,0.72)', fontSize: 11, lineHeight: 1.45, maxWidth: 290 }}>
             Risk none, some, or all of your {score} points on a fact you encountered during this ten-level run.
           </p>
@@ -501,12 +570,14 @@ function TriviaOverlay({
 
 function MinerCharacter({ celebrate, compact = false }: { celebrate: boolean; compact?: boolean }) {
   return (
-    <svg
+      <svg
       width={compact ? 34 : 52}
       height={compact ? 42 : 60}
       viewBox="0 0 52 64"
       fill="none"
       style={{ overflow: 'visible' }}
+        aria-hidden="true"
+        focusable="false"
     >
       <rect x="12" y="4" width="28" height="8" rx="4" fill="#f59e0b" />
       <rect x="9" y="10" width="34" height="4" rx="2" fill="#d97706" />
@@ -536,7 +607,7 @@ function MinerCharacter({ celebrate, compact = false }: { celebrate: boolean; co
 const RULE_CARDS = [
   {
     title: 'Dig carefully',
-    detail: 'Open only cells in the miner’s current row or the row directly below.',
+    detail: 'Dig only in the miner’s current row. After every green block in that row is found, move down one row.',
     label: 'ONE ROW AT A TIME',
   },
   {
@@ -556,6 +627,27 @@ const RULE_CARDS = [
   },
 ]
 
+function CharityWaterLogo({ className = '' }: { className?: string }) {
+  return (
+    <a
+      className={`charity-water-logo ${className}`}
+      href="https://www.charitywater.org/"
+      target="_blank"
+      rel="noreferrer"
+      aria-label="charity: water official website"
+      translate="no"
+    >
+      <img
+        className="charity-water-icon"
+        src="https://www.charitywater.org/vite/assets/apple-pin-favicon-F4mtjPZy.svg"
+        alt=""
+        aria-hidden="true"
+      />
+      <span>charity</span><span className="charity-water-colon" aria-hidden="true">:</span><span>water</span>
+    </a>
+  )
+}
+
 function RulesDemoOverlay({
   difficulty,
   onDifficultyChange,
@@ -570,14 +662,24 @@ function RulesDemoOverlay({
   const [step, setStep] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [demoStarted, setDemoStarted] = useState(false)
+  const [reducedMotion, setReducedMotion] = useState(false)
+  const dialogRef = useDialogFocus<HTMLDivElement>()
 
   useEffect(() => {
-    if (!playing) return
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const updatePreference = () => setReducedMotion(preference.matches)
+    updatePreference()
+    preference.addEventListener('change', updatePreference)
+    return () => preference.removeEventListener('change', updatePreference)
+  }, [])
+
+  useEffect(() => {
+    if (!playing || reducedMotion) return
     const timer = window.setInterval(() => {
       setStep(current => Math.min(RULE_CARDS.length - 1, current + 1))
     }, 3200)
     return () => window.clearInterval(timer)
-  }, [playing])
+  }, [playing, reducedMotion])
 
   useEffect(() => {
     if (playing && step === RULE_CARDS.length - 1) setPlaying(false)
@@ -587,11 +689,13 @@ function RulesDemoOverlay({
 
   return (
     <div
+      ref={dialogRef}
       className="absolute inset-0 z-[70] flex items-center justify-center px-4 py-5"
       style={{ background: 'rgba(4,18,32,0.97)', backdropFilter: 'blur(6px)' }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="rules-demo-title"
+      tabIndex={-1}
     >
       <div
         className="tutorial-panel w-full max-w-[340px] overflow-y-auto rounded-3xl px-5 py-5"
@@ -602,6 +706,15 @@ function RulesDemoOverlay({
           boxShadow: '0 24px 70px rgba(0,0,0,0.65), 0 0 35px rgba(0,201,255,0.14)',
         }}
       >
+        <div className="tutorial-sponsor-row">
+          <CharityWaterLogo />
+          <span className="sponsor-caption">OFFICIAL WATER PARTNER</span>
+        </div>
+        <div className="sponsor-impact-strip" aria-label="charity: water impact">
+          <span><strong>100%</strong> of public donations fund water projects</span>
+          <span><strong>21.6M</strong> people served</span>
+          <span><strong>209K+</strong> funded water projects</span>
+        </div>
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="font-black" style={{ color: '#00ffcc', fontSize: 10, letterSpacing: '0.14em' }}>
@@ -611,7 +724,7 @@ function RulesDemoOverlay({
               How to reclaim water
             </h2>
           </div>
-          <div className="flex flex-col items-end gap-1" aria-label="Choose difficulty">
+          <div className="flex flex-col items-end gap-1" role="group" aria-label="Choose difficulty">
             {(['easy', 'hard'] as const).map(mode => (
               <button
                 key={mode}
@@ -626,7 +739,7 @@ function RulesDemoOverlay({
           </div>
         </div>
 
-        <div className={`demo-board demo-step-${step + 1}`} aria-label={`Animated game preview: ${selectedRule.title}`}>
+        <div className={`demo-board demo-step-${step + 1}`} role="img" aria-label={`Animated game preview: ${selectedRule.title}`}>
           {Array.from({ length: 15 }, (_, index) => {
             const row = Math.floor(index / COLS)
             const isClean = step >= 1 && [1, 2, 7, 12].includes(index)
@@ -683,12 +796,16 @@ function RulesDemoOverlay({
             type="button"
             className={`demo-play-button ${demoStarted ? 'has-started' : ''}`}
             onClick={() => {
-              if (!playing && step === RULE_CARDS.length - 1) setStep(0)
               setDemoStarted(true)
+              if (reducedMotion) {
+                setStep(current => current === RULE_CARDS.length - 1 ? 0 : current + 1)
+                return
+              }
+              if (!playing && step === RULE_CARDS.length - 1) setStep(0)
               setPlaying(current => !current)
             }}
           >
-            {playing ? 'PAUSE DEMO' : 'PLAY DEMO'}
+            {reducedMotion ? 'NEXT DEMO STEP' : playing ? 'PAUSE DEMO' : 'PLAY DEMO'}
           </button>
           <button type="button" className="tutorial-start-button" onClick={onClose}>
             {isIntro ? 'START MISSION' : 'RETURN TO GAME'}
@@ -700,6 +817,7 @@ function RulesDemoOverlay({
 }
 
 export default function App() {
+  const { language, languages, languageError, translationError, setLanguage } = useAutomaticTranslation()
   const usedMazes = useRef(new Set<string>())
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
   const [grid, setGrid] = useState<Cell[][]>(() => generateGrid(1, 'easy', usedMazes.current))
@@ -725,6 +843,7 @@ export default function App() {
   const learnedFactIds = useRef(new Set<string>())
   const completedGrid = useRef<Cell[][] | null>(null)
   const celebrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const toxicDialogRef = useDialogFocus<HTMLDivElement>(showToxicWarning && !showCelebration)
 
   const drawFact = (facts: KnowledgeFact[], current: KnowledgeFact) => {
     const lowestUseCount = Math.min(
@@ -771,12 +890,13 @@ export default function App() {
     setQuizScoreChange(null)
   }
 
-  // After each grid change, check if a path exists
+  // Complete the route only after every green block has been opened.
   useEffect(() => {
     const path = findPath(grid)
-    if (path && !pipeActive && completedGrid.current !== grid) {
+    const remainingGreen = grid.flat().some(cell => cell.onPath && cell.type !== 'empty')
+    if (path && !remainingGreen && !pipeActive && completedGrid.current !== grid) {
       completedGrid.current = grid
-      const pathSet = new Set(path.map(([r, c]) => `${r}-${c}`))
+      const pathSet = new Set(grid.flat().filter(cell => cell.onPath).map(cell => cell.id))
       setPathCells(pathSet)
       setPipeActive(true)
       setCelebrate(true)
@@ -913,18 +1033,18 @@ export default function App() {
   const routeTurns = getRouteSegments(level, difficulty) * 2
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#041220' }}>
+    <div className="game-viewport">
       <div
-        className="relative overflow-hidden flex flex-col"
+        className="game-shell relative overflow-x-hidden flex flex-col"
         style={{
-          width: 375, minHeight: 780,
-          borderRadius: 40,
+          width: 'min(100%, 420px)', minHeight: 'min(780px, 100dvh)',
+          borderRadius: 'clamp(0px, 5vw, 40px)',
           background: 'linear-gradient(180deg, #041220 0%, #062040 100%)',
           boxShadow: '0 0 0 8px #1a2540, 0 0 0 10px #0d1a30, 0 30px 80px rgba(0,0,0,0.8)',
         }}
       >
         {/* Status bar */}
-        <div className="flex justify-between items-center px-7 pt-5 pb-1">
+        <div className="flex justify-between items-center px-7 pt-5 pb-1" aria-hidden="true">
           <span style={{ fontSize: 11, color: 'rgba(168,216,240,0.5)', fontWeight: 700 }}>9:41</span>
           <span style={{ fontSize: 10, color: 'rgba(168,216,240,0.4)' }}>●●●</span>
         </div>
@@ -949,10 +1069,8 @@ export default function App() {
                 </span>
               </div>
             </div>
-            <div className="claim-water-wordmark" role="img" aria-label="Claim:Water">
-              <span>claim</span><span className="claim-water-colon">:</span><span>water</span>
-            </div>
-            <div className="px-4 py-2 rounded-2xl font-black"
+            <CharityWaterLogo className="hud-charity-water-logo" />
+            <div className="px-4 py-2 rounded-2xl font-black" role="status" aria-live="polite" aria-atomic="true" aria-label={`Score: ${score} points`}
               style={{
                 background: 'rgba(0,201,255,0.1)', border: '1.5px solid rgba(0,201,255,0.25)',
                 fontSize: 26, color: '#00c9ff', textShadow: '0 0 12px rgba(0,201,255,0.4)',
@@ -969,6 +1087,26 @@ export default function App() {
             <button type="button" className="tutorial-open-button" onClick={() => setShowRules(true)}>
               HOW TO PLAY
             </button>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <label className="game-language-control" translate="no">
+              <span>LANGUAGE</span>
+              <select
+                aria-label="Game language"
+                value={language}
+                disabled={languages.length <= 1}
+                onChange={event => setLanguage(event.target.value)}
+              >
+                {languages.map(option => (
+                  <option key={option.language} value={option.language}>{option.name}</option>
+                ))}
+              </select>
+            </label>
+            {(languageError || translationError) && (
+              <span className="translation-status" role="status" aria-live="polite">
+                {languageError ? 'Translation service unavailable' : translationError}
+              </span>
+            )}
           </div>
         </div>
 
@@ -1017,10 +1155,12 @@ export default function App() {
         </div>
 
         {/* Grid */}
-        <div className="relative px-5">
+        <div className="relative px-5" role="region" aria-label="Mining field">
           <p
             className="m-0 pb-2 text-center font-bold"
             style={{ fontSize: 9, color: 'rgba(168,216,240,0.5)', letterSpacing: '0.06em' }}
+            aria-live="polite"
+            aria-atomic="true"
           >
             {playerRow < 0
               ? 'DIG THE TOP ROW TO FIND GREEN'
@@ -1056,12 +1196,26 @@ export default function App() {
                 const isStart = r === 0 && cell.onPath && !isEmpty
                 const isExit = r === ROWS - 1 && c === EXIT_COL && cell.onPath && !isEmpty
                 const hasMiner = lastCleanCell === `${r}-${c}`
+                const cellDescription = isEmpty
+                  ? isClearedClean
+                    ? 'clean water found, 10 points earned'
+                    : isClearedToxic
+                      ? 'toxic water found, 5 points deducted'
+                      : 'dug'
+                  : isStart
+                    ? 'route start'
+                    : isExit
+                      ? 'groundwater exit'
+                      : isLocked
+                        ? r < playableRow ? 'row complete' : 'locked until this row is cleared'
+                        : 'covered block, available to dig'
 
                 return (
                   <button
                     key={cell.id}
                     onClick={() => tap(r, c)}
                     disabled={isEmpty || cell.cracking || pipeActive || isLocked}
+                    aria-label={`Row ${r + 1}, column ${c + 1}: ${cellDescription}`}
                     className={`relative rounded-lg flex flex-col items-center justify-center overflow-hidden transition-all ${cell.cracking ? 'block-breaking' : ''}`}
                     style={{
                       height: 52,
@@ -1216,9 +1370,9 @@ export default function App() {
         </div>
 
         {/* Controls */}
-        <div className="px-5 pb-7 flex gap-3">
+        <div className="px-5 pb-7 flex justify-center">
           <button onClick={reset}
-            className="flex-1 font-black rounded-2xl py-3 transition-all active:scale-95"
+            className="w-full max-w-[220px] font-black rounded-2xl py-3 transition-all active:scale-95"
             style={{
               background: 'rgba(0,201,255,0.1)', color: '#00c9ff', fontSize: 13,
               border: '1.5px solid rgba(0,201,255,0.3)', cursor: 'pointer', letterSpacing: '0.04em',
@@ -1226,24 +1380,18 @@ export default function App() {
           >
             NEW GRID
           </button>
-          <button onClick={nextLevel} disabled
-            className="flex-1 font-black rounded-2xl py-3 transition-all active:scale-95"
-            style={{
-              background: 'rgba(255,255,255,0.05)', color: 'rgba(168,216,240,0.3)', fontSize: 13,
-              border: 'none', cursor: 'default', letterSpacing: '0.04em',
-            }}
-          >
-            NEXT LEVEL →
-          </button>
         </div>
 
         {/* Celebration */}
         {showToxicWarning && !showCelebration && (
           <div
+            ref={toxicDialogRef}
             className="absolute inset-0 z-40 flex items-center justify-center px-5"
             style={{ background: 'rgba(4,18,32,0.72)', backdropFilter: 'blur(3px)' }}
             role="dialog"
             aria-modal="true"
+            aria-labelledby="toxic-dialog-title"
+            tabIndex={-1}
           >
             <div
               className="pop-in relative w-full max-w-[300px] overflow-hidden rounded-3xl px-6 py-5 text-center"
@@ -1254,6 +1402,7 @@ export default function App() {
               }}
             >
               <div
+                id="toxic-dialog-title"
                 className="font-black"
                 style={{ color: '#ff7434', fontSize: 11, letterSpacing: '0.14em' }}
               >
