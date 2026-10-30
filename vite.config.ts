@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
   return {
+    base: process.env.VITE_BASE_PATH ?? '/',
     plugins: [react(), tailwindcss(), googleTranslationPlugin(env.GOOGLE_CLOUD_TRANSLATE_API_KEY)],
     server: {
       host: '0.0.0.0',
