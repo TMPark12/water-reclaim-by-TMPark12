@@ -12,9 +12,11 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss(), googleTranslationPlugin(env.GOOGLE_CLOUD_TRANSLATE_API_KEY)],
     server: {
       host: '0.0.0.0',
+      allowedHosts: ['.app.github.dev', '.githubpreview.dev'],
     },
     preview: {
       host: '0.0.0.0',
+      allowedHosts: ['.app.github.dev', '.githubpreview.dev'],
     },
   }
 })
