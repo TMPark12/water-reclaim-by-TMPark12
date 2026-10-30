@@ -312,41 +312,6 @@ button:disabled {
   letter-spacing: 0.08em;
 }
 
-.game-language-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: rgba(232, 244, 253, 0.88);
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-}
-
-.game-language-control select {
-  max-width: 150px;
-  min-height: 34px;
-  padding: 5px 24px 5px 8px;
-  border: 1px solid rgba(255, 216, 77, 0.48);
-  border-radius: 8px;
-  color: #ffffff;
-  background: #0b3151;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.game-language-control select:disabled {
-  opacity: 0.7;
-}
-
-.translation-status {
-  max-width: 160px;
-  color: #ffe477;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-align: right;
-}
-
 .tutorial-open-button,
 .difficulty-choice,
 .demo-control,
@@ -582,10 +547,6 @@ button:disabled {
   .charity-water-icon {
     width: 16px;
     height: 16px;
-  }
-
-  .game-language-control select {
-    max-width: 120px;
   }
 }
 

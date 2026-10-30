@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { useAutomaticTranslation } from './automatic-translation'
 
 type BlockType = 'clean' | 'pollutant' | 'empty'
 
@@ -817,7 +816,6 @@ function RulesDemoOverlay({
 }
 
 export default function App() {
-  const { language, languages, languageError, translationError, setLanguage } = useAutomaticTranslation()
   const usedMazes = useRef(new Set<string>())
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
   const [grid, setGrid] = useState<Cell[][]>(() => generateGrid(1, 'easy', usedMazes.current))
@@ -1087,26 +1085,6 @@ export default function App() {
             <button type="button" className="tutorial-open-button" onClick={() => setShowRules(true)}>
               HOW TO PLAY
             </button>
-          </div>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <label className="game-language-control" translate="no">
-              <span>LANGUAGE</span>
-              <select
-                aria-label="Game language"
-                value={language}
-                disabled={languages.length <= 1}
-                onChange={event => setLanguage(event.target.value)}
-              >
-                {languages.map(option => (
-                  <option key={option.language} value={option.language}>{option.name}</option>
-                ))}
-              </select>
-            </label>
-            {(languageError || translationError) && (
-              <span className="translation-status" role="status" aria-live="polite">
-                {languageError ? 'Translation service unavailable' : translationError}
-              </span>
-            )}
           </div>
         </div>
 

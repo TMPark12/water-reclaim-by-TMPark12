@@ -1,16 +1,12 @@
-import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin } from 'vite'
+import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-
 
 // Vite config — https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
-
+export default defineConfig(() => {
   return {
     base: process.env.VITE_BASE_PATH ?? '/',
-    plugins: [react(), tailwindcss(), googleTranslationPlugin(env.GOOGLE_CLOUD_TRANSLATE_API_KEY)],
+    plugins: [react(), tailwindcss()],
     server: {
       host: '0.0.0.0',
       allowedHosts: ['.app.github.dev', '.githubpreview.dev'],
@@ -21,136 +17,6 @@ export default defineConfig(({ mode }) => {
     },
   }
 })
-
-const GOOGLE_TRANSLATE_API = 'https://translation.googleapis.com/language/translate/v2'
-const MAX_REQUEST_BYTES = 64 * 1024
-const MAX_TEXTS_PER_REQUEST = 40
-const MAX_TEXT_LENGTH = 10_000
-const languageCache = new Map<string, { expiresAt: number; languages: unknown[] }>()
-const requestWindows = new Map<string, { startedAt: number; count: number }>()
-
-function sendJson(res: ServerResponse, status: number, body: unknown) {
-  res.statusCode = status
-  res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.setHeader('Cache-Control', 'no-store')
-  res.end(JSON.stringify(body))
-}
-
-async function readJson(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = []
-  let size = 0
-
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    size += buffer.byteLength
-    if (size > MAX_REQUEST_BYTES) throw new RangeError('Request body too large')
-    chunks.push(buffer)
-  }
-
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
-}
-
-function googleTranslationPlugin(apiKey?: string): Plugin {
-  const middleware = async (
-    req: IncomingMessage,
-    res: ServerResponse,
-    next: (error?: Error) => void,
-  ) => {
-    const url = new URL(req.url ?? '/', 'http://vite.local')
-    if (url.pathname !== '/api/languages' && url.pathname !== '/api/translate') return next()
-
-    res.setHeader('Cache-Control', 'no-store')
-    const expectedMethod = url.pathname === '/api/languages' ? 'GET' : 'POST'
-    if (req.method !== expectedMethod) {
-      return sendJson(res, 405, { error: 'Method not allowed' })
-    }
-
-    if (!apiKey) {
-      return sendJson(res, 503, { error: 'Translation service is not configured' })
-    }
-
-    const clientAddress = req.socket.remoteAddress ?? 'unknown'
-    const now = Date.now()
-    const window = requestWindows.get(clientAddress)
-    if (window && now - window.startedAt < 60_000 && window.count >= 60) {
-      return sendJson(res, 429, { error: 'Translation request limit reached' })
-    }
-    requestWindows.set(
-      clientAddress,
-      window && now - window.startedAt < 60_000
-        ? { ...window, count: window.count + 1 }
-        : { startedAt: now, count: 1 },
-    )
-
-    try {
-      if (url.pathname === '/api/languages') {
-        const target = url.searchParams.get('target') ?? 'en'
-        if (!/^[a-zA-Z0-9-]{2,20}$/.test(target)) {
-          return sendJson(res, 400, { error: 'Invalid language code' })
-        }
-
-        const cached = languageCache.get(target)
-        if (cached && cached.expiresAt > now) {
-          return sendJson(res, 200, { languages: cached.languages })
-        }
-
-        const response = await fetch(
-          `${GOOGLE_TRANSLATE_API}/languages?key=${encodeURIComponent(apiKey)}&target=${encodeURIComponent(target)}`,
-          { signal: AbortSignal.timeout(15_000) },
-        )
-        if (!response.ok) return sendJson(res, 502, { error: 'Could not load supported languages' })
-
-        const result = await response.json() as { data?: { languages?: unknown[] } }
-        const languages = result.data?.languages ?? []
-        languageCache.set(target, { expiresAt: now + 24 * 60 * 60 * 1000, languages })
-        return sendJson(res, 200, { languages })
-      }
-
-      const body = await readJson(req) as { target?: unknown; texts?: unknown }
-      const target = body.target
-      const texts = body.texts
-      if (
-        typeof target !== 'string' ||
-        !/^[a-zA-Z0-9-]{2,20}$/.test(target) ||
-        !Array.isArray(texts) ||
-        texts.length === 0 ||
-        texts.length > MAX_TEXTS_PER_REQUEST ||
-        texts.some(text => typeof text !== 'string' || text.length > MAX_TEXT_LENGTH)
-      ) {
-        return sendJson(res, 400, { error: 'Invalid translation request' })
-      }
-
-      const response = await fetch(`${GOOGLE_TRANSLATE_API}?key=${encodeURIComponent(apiKey)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ q: texts, target, format: 'text' }),
-        signal: AbortSignal.timeout(20_000),
-      })
-      if (!response.ok) return sendJson(res, 502, { error: 'Translation request failed' })
-
-      const result = await response.json() as {
-        data?: { translations?: { translatedText: string }[] }
-      }
-      return sendJson(res, 200, {
-        translations: result.data?.translations?.map(item => item.translatedText) ?? [],
-      })
-    } catch (error) {
-      if (error instanceof RangeError) return sendJson(res, 413, { error: error.message })
-      if (error instanceof SyntaxError) return sendJson(res, 400, { error: 'Invalid JSON body' })
-      return sendJson(res, 502, { error: 'Translation service is unavailable' })
-    }
-  }
-
-  return {
-    name: 'google-cloud-translation-proxy',
-    configureServer(server) {
-      server.middlewares.use(middleware)
-    },
-    configurePreviewServer(server) {
-      server.middlewares.use(middleware)
-    },
-  }
-}
 
 type FigmaSiteConfiguration = {
   title?: string
