@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { playHappySound, playSadSound, playCelebrationSound } from './audio-utils'
+import { playHappySound, playSadSound, playCelebrationSound, setVolume, getVolume } from './audio-utils'
 import { getMilestoneForLevel, getNextMilestone, type Milestone } from './milestones'
 
 type BlockType = 'clean' | 'pollutant' | 'empty'
@@ -841,6 +841,7 @@ export default function App() {
   const [quizScoreChange, setQuizScoreChange] = useState<number | null>(null)
   const [currentMilestone, setCurrentMilestone] = useState<Milestone | null>(null)
   const [showMilestone, setShowMilestone] = useState(false)
+  const [volume, setVolumeState] = useState(getVolume())
   const factUseCounts = useRef(new Map<string, number>())
   const learnedFactIds = useRef(new Set<string>())
   const completedGrid = useRef<Cell[][] | null>(null)
@@ -927,6 +928,11 @@ export default function App() {
       milestoneTimer.current = setTimeout(() => setShowMilestone(false), 4000)
     }
   }, [level])
+
+  const handleVolumeChange = (newVolume: number) => {
+    setVolumeState(newVolume)
+    setVolume(newVolume)
+  }
 
   const tap = (row: number, col: number) => {
     if (pipeActive) return
@@ -1119,6 +1125,34 @@ export default function App() {
             <button type="button" className="tutorial-open-button" onClick={() => setShowRules(true)}>
               HOW TO PLAY
             </button>
+          </div>
+
+          {/* Volume Control */}
+          <div className="mt-3 flex items-center gap-2">
+            <label htmlFor="volume-slider" style={{ fontSize: 10, color: 'rgba(168,216,240,0.7)', fontWeight: 600, minWidth: 32 }}>
+              🔊 VOL
+            </label>
+            <input
+              id="volume-slider"
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(volume * 100)}
+              onChange={(e) => handleVolumeChange(parseFloat(e.target.value) / 100)}
+              style={{
+                flex: 1,
+                height: 4,
+                borderRadius: 2,
+                background: 'rgba(0,255,204,0.2)',
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+              aria-label="Master volume"
+              title={`Volume: ${Math.round(volume * 100)}%`}
+            />
+            <span style={{ fontSize: 9, color: 'rgba(168,216,240,0.6)', fontWeight: 600, minWidth: 20 }}>
+              {Math.round(volume * 100)}%
+            </span>
           </div>
         </div>
 
