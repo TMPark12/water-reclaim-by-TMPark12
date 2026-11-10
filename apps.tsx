@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
+import { playHappySound, playSadSound, playCelebrationSound } from './audio-utils'
+import { getMilestoneForLevel, getNextMilestone, type Milestone } from './milestones'
 
 type BlockType = 'clean' | 'pollutant' | 'empty'
 
@@ -837,10 +839,13 @@ export default function App() {
   const [wagerPercent, setWagerPercent] = useState<number | null>(null)
   const [selectedQuizFactId, setSelectedQuizFactId] = useState<string | null>(null)
   const [quizScoreChange, setQuizScoreChange] = useState<number | null>(null)
+  const [currentMilestone, setCurrentMilestone] = useState<Milestone | null>(null)
+  const [showMilestone, setShowMilestone] = useState(false)
   const factUseCounts = useRef(new Map<string, number>())
   const learnedFactIds = useRef(new Set<string>())
   const completedGrid = useRef<Cell[][] | null>(null)
   const celebrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const milestoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toxicDialogRef = useDialogFocus<HTMLDivElement>(showToxicWarning && !showCelebration)
 
   const drawFact = (facts: KnowledgeFact[], current: KnowledgeFact) => {
@@ -901,12 +906,27 @@ export default function App() {
       setShowCelebration(false)
       setCleanWaterFact(drawFact(CLEAN_WATER_FACTS, cleanWaterFact))
       setScore(s => s + 50)
+      
+      // Play celebration sound
+      playCelebrationSound()
+      
       if (celebrationTimer.current) clearTimeout(celebrationTimer.current)
       celebrationTimer.current = setTimeout(() => setShowCelebration(true), 600)
     } else if (!path) {
       setPathCells(new Set())
     }
   }, [grid])
+
+  // Check for milestones when level changes
+  useEffect(() => {
+    const milestone = getMilestoneForLevel(level)
+    if (milestone) {
+      setCurrentMilestone(milestone)
+      setShowMilestone(true)
+      if (milestoneTimer.current) clearTimeout(milestoneTimer.current)
+      milestoneTimer.current = setTimeout(() => setShowMilestone(false), 4000)
+    }
+  }, [level])
 
   const tap = (row: number, col: number) => {
     if (pipeActive) return
@@ -930,6 +950,14 @@ export default function App() {
 
     const isClean = cell.type === 'clean'
     const pts = isClean ? 10 : -5
+    
+    // Play sound effect based on block type
+    if (isClean) {
+      playHappySound()
+    } else {
+      playSadSound()
+    }
+    
     if (!isClean) {
       setToxicWaterFact(drawFact(TOXIC_WATER_FACTS, toxicWaterFact))
       setShowToxicWarning(true)
@@ -956,6 +984,7 @@ export default function App() {
 
   const nextLevel = () => {
     if (celebrationTimer.current) clearTimeout(celebrationTimer.current)
+    if (milestoneTimer.current) clearTimeout(milestoneTimer.current)
     setLevel(l => l + 1)
     setGrid(generateGrid(level + 1, difficulty, usedMazes.current))
     setPathCells(new Set())
@@ -963,11 +992,13 @@ export default function App() {
     setCelebrate(false)
     setShowCelebration(false)
     setShowToxicWarning(false)
+    setShowMilestone(false)
     setLastCleanCell(null)
   }
 
   const reset = () => {
     if (celebrationTimer.current) clearTimeout(celebrationTimer.current)
+    if (milestoneTimer.current) clearTimeout(milestoneTimer.current)
     setGrid(generateGrid(level, difficulty, usedMazes.current))
     setScore(0)
     setPathCells(new Set())
@@ -975,11 +1006,13 @@ export default function App() {
     setCelebrate(false)
     setShowCelebration(false)
     setShowToxicWarning(false)
+    setShowMilestone(false)
     setLastCleanCell(null)
   }
 
   const startNewGame = (nextDifficulty: Difficulty) => {
     if (celebrationTimer.current) clearTimeout(celebrationTimer.current)
+    if (milestoneTimer.current) clearTimeout(milestoneTimer.current)
     usedMazes.current.clear()
     learnedFactIds.current.clear()
     factUseCounts.current.clear()
@@ -992,6 +1025,7 @@ export default function App() {
     setCelebrate(false)
     setShowCelebration(false)
     setShowToxicWarning(false)
+    setShowMilestone(false)
     setLastCleanCell(null)
     setQuizFact(null)
     setQuizOptions([])
@@ -1419,6 +1453,58 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* Milestone Display */}
+        {showMilestone && currentMilestone && (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center px-5"
+            style={{ 
+              background: 'rgba(4,18,32,0.85)', 
+              backdropFilter: 'blur(4px)',
+              animation: 'fadeIn 0.3s ease-out',
+            }}
+            role="status"
+            aria-live="assertive"
+            aria-labelledby="milestone-title"
+          >
+            <div
+              className="pop-in relative w-full max-w-[320px] overflow-hidden rounded-3xl px-6 py-8 text-center"
+              style={{
+                background: 'linear-gradient(145deg, rgba(0,100,80,0.95), rgba(0,60,50,0.95))',
+                border: '2px solid rgba(0,255,204,0.6)',
+                boxShadow: '0 0 40px rgba(0,255,204,0.25), 0 20px 50px rgba(0,0,0,0.6)',
+              }}
+            >
+              <div style={{ fontSize: 48, marginBottom: 8 }}>
+                {currentMilestone.emoji}
+              </div>
+              <div
+                id="milestone-title"
+                className="font-black"
+                style={{ color: '#00ffcc', fontSize: 14, letterSpacing: '0.12em', textTransform: 'uppercase' }}
+              >
+                {currentMilestone.title}
+              </div>
+              <div
+                className="mx-auto my-3 h-px w-16"
+                style={{ background: 'rgba(0,255,204,0.4)' }}
+              />
+              <p
+                className="mb-0 font-bold"
+                style={{ color: 'rgba(200,255,240,0.9)', fontSize: 13, lineHeight: 1.5 }}
+              >
+                {currentMilestone.message}
+              </p>
+              <div
+                className="mt-4 text-center font-black"
+                style={{ color: 'rgba(0,255,204,0.8)', fontSize: 18 }}
+              >
+                LEVEL {currentMilestone.level}
+              </div>
+            </div>
+          </div>
+        )}
+
         {showCelebration && (
           <CelebrationOverlay
             key={`level-${level}`}
